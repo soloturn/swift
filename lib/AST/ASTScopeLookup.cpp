@@ -271,6 +271,24 @@ bool GenericTypeOrExtensionScope::areMembersVisibleFromWhereClause() const {
   return isa<ProtocolDecl>(decl) || isa<ExtensionDecl>(decl);
 }
 
+#pragma mark custom lookup parent behavior
+
+NullablePtr<const ASTScopeImpl>
+PatternEntryInitializerScope::getLookupParent() const {
+  auto parent = getParent().get();
+  assert(parent->getClassName() == "PatternEntryDeclScope");
+
+  // Lookups from inside a pattern binding initializer skip the parent
+  // scope that introduces bindings bound by the pattern, since we
+  // want this to work:
+  //
+  // func f(x: Int) {
+  //   let x = x
+  //   print(x)
+  // }
+  return parent->getLookupParent();
+}
+
 #pragma mark looking in locals or members - locals
 
 bool GenericParamScope::lookupLocalsOrMembers(DeclConsumer consumer) const {
@@ -302,19 +320,13 @@ bool CaseStmtBodyScope::lookupLocalsOrMembers(DeclConsumer consumer) const {
   return false;
 }
 
-bool AbstractFunctionBodyScope::lookupLocalsOrMembers(
+bool FunctionBodyScope::lookupLocalsOrMembers(
     DeclConsumer consumer) const {
   if (auto *paramList = decl->getParameters()) {
     for (auto *paramDecl : *paramList)
       if (consumer.consume({paramDecl}, DeclVisibilityKind::FunctionParameter))
         return true;
   }
-  return false;
-}
-
-bool FunctionBodyScope::lookupLocalsOrMembers(DeclConsumer consumer) const {
-  if (AbstractFunctionBodyScope::lookupLocalsOrMembers(consumer))
-    return true;
 
   if (decl->getDeclContext()->isTypeContext()) {
     return consumer.consume({decl->getImplicitSelfDecl()},
@@ -513,6 +525,10 @@ bool ForEachPatternScope::isLabeledStmtLookupTerminator() const {
 }
 
 bool CaseStmtBodyScope::isLabeledStmtLookupTerminator() const {
+  return false;
+}
+
+bool PatternEntryDeclScope::isLabeledStmtLookupTerminator() const {
   return false;
 }
 
